@@ -126,4 +126,8 @@ export default function Dashboard() {
       </main>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 3a8ab93a5c3eb4440c91068874ebc2d7079b4631
