@@ -1,0 +1,304 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
+
+// Configuración de Firebase - ¡No la modifiques! Se carga automáticamente.
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Inicialización de la aplicación Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// Variables globales para la conexión
+let userId;
+
+// Lecciones de ejemplo (datos simulados)
+const mockLessons = [
+  { id: '1-a1', title: 'Introducción al Presente Simple', level: 'A1', type: 'grammar', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '2-a1', title: 'Vocabulario Básico: Familia', level: 'A1', type: 'vocabulary', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '3-a1', title: 'Hablando de Rutinas', level: 'A1', type: 'speaking', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '4-a1', title: 'Verbo "To Be"', level: 'A1', type: 'grammar', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '5-a2', title: 'Pasado Simple', level: 'A2', type: 'grammar', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '6-a2', title: 'Vocabulario: Compras', level: 'A2', type: 'vocabulary', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '7-b1', title: 'Presente Perfecto', level: 'B1', type: 'grammar', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+  { id: '8-b1', title: 'Expresiones Idiomáticas', level: 'B1', type: 'vocabulary', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ' },
+];
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [page, setPage] = useState('dashboard');
+  const [userData, setUserData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [currentLevel, setCurrentLevel] = useState('A1');
+  const [selectedLesson, setSelectedLesson] = useState(null);
+
+  // Inicializar la autenticación con el token
+  useEffect(() => {
+    // Si no hay token de autenticación, el usuario no está registrado.
+    if (!initialAuthToken) {
+      setLoading(false);
+      return;
+    }
+
+    // Usar el token para iniciar sesión si existe
+    signInWithCustomToken(auth, initialAuthToken)
+      .then(userCredential => {
+        const user = userCredential.user;
+        setUser(user);
+        userId = user.uid; // Asigna el UID del usuario a la variable global
+      })
+      .catch(error => {
+        console.error("Error signing in:", error);
+        setUser(null); // Asegura que el usuario sea nulo si falla la autenticación
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+
+  }, []);
+
+  // Observador de la base de datos para los datos del usuario
+  useEffect(() => {
+    if (!userId || !user) return;
+
+    const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
+    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setUserData(data);
+        setCurrentLevel(data.currentLevel || 'A1');
+      } else {
+        // Si no existen los datos, crea el documento inicial
+        setDoc(userDocRef, {
+          userId: userId,
+          currentLevel: 'A1',
+          progress: 0,
+          lessonsCompleted: [],
+          lastActivity: new Date(),
+        }).catch(e => console.error("Error creating user data:", e));
+        setUserData({ userId: userId, currentLevel: 'A1', progress: 0, lessonsCompleted: [], lastActivity: new Date() });
+      }
+    }, (error) => {
+      console.error("Error fetching user data:", error);
+    });
+
+    return () => unsubscribe();
+  }, [userId, user]);
+
+  const handleLessonCompletion = async (lessonId) => {
+    if (!userData) return;
+    setMessage(`¡Lección ${lessonId} completada!`);
+    
+    const lessons = userData.lessonsCompleted;
+    if (!lessons.includes(lessonId)) {
+        lessons.push(lessonId);
+        const newProgress = userData.progress + 10;
+        const newLevel = newProgress >= 100 ? getNextLevel(currentLevel) : currentLevel;
+
+        const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
+        try {
+            await setDoc(userDocRef, {
+                lessonsCompleted: lessons,
+                progress: newProgress % 100, // Reinicia el progreso al cambiar de nivel
+                currentLevel: newLevel,
+                lastActivity: new Date(),
+            }, { merge: true });
+            
+        } catch (e) {
+            console.error("Error updating document: ", e);
+            setMessage("Error al guardar el progreso.");
+        }
+    }
+  };
+
+  const getNextLevel = (level) => {
+    const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    const currentIndex = levels.indexOf(level);
+    return currentIndex < levels.length - 1 ? levels[currentIndex + 1] : 'C2';
+  };
+
+  const renderLoginRequired = () => (
+    <div className="flex justify-center items-center h-screen bg-gray-900 text-white">
+      <div className="text-center p-8 bg-gray-800 rounded-2xl shadow-xl border-t-2 border-red-500">
+        <h1 className="text-3xl font-bold text-red-400 mb-4">Acceso Denegado</h1>
+        <p className="text-lg text-gray-300 mb-6">
+          Para acceder a esta plataforma, debes ser un estudiante registrado.
+        </p>
+        <p className="text-sm text-gray-500">
+          Por favor, contacta a la administración para obtener acceso.
+        </p>
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-gray-900 text-white">
+        <div className="text-center">
+          <svg className="animate-spin h-10 w-10 text-orange-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p className="mt-4 text-xl">Cargando LinguaFlow...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si no hay un usuario autenticado, muestra el mensaje de acceso denegado
+  if (!user || !userData) {
+    return renderLoginRequired();
+  }
+
+  const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+  const lessonsForCurrentLevel = mockLessons.filter(lesson => lesson.level === currentLevel);
+
+  const renderDashboard = () => (
+    <div className="p-8 bg-gray-900 text-white min-h-screen">
+      <div className="container mx-auto">
+        <div className="flex items-center mb-6">
+          <img src="https://placehold.co/60x60/f97316/ffffff?text=LF" alt="LinguaFlow Logo" className="rounded-full mr-4" />
+          <h1 className="text-4xl font-bold text-orange-400">LinguaFlow</h1>
+        </div>
+        <p className="text-gray-400 mb-6">¡Hola, {user.uid.substring(0, 8)}...! Bienvenido de nuevo.</p>
+        <p className="text-gray-400 mb-6">Tu ID de usuario para compartir: **{userId}**</p>
+
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* Tarjeta de Progreso */}
+          <div className="bg-gray-800 rounded-2xl p-6 shadow-xl border-t-2 border-orange-500">
+            <h2 className="text-2xl font-semibold mb-4 text-gray-200">Tu Progreso</h2>
+            <div className="flex items-center mb-4">
+              <span className="text-4xl font-bold text-orange-400 mr-4">{currentLevel}</span>
+              <div className="w-full bg-gray-700 rounded-full h-4">
+                <div className="bg-green-500 h-4 rounded-full transition-all duration-500" style={{ width: `${userData.progress}%` }}></div>
+              </div>
+            </div>
+            <p className="text-gray-400">Progreso para el siguiente nivel: {userData.progress}%</p>
+            <p className="text-gray-400">Lecciones completadas: {userData.lessonsCompleted.length}</p>
+          </div>
+
+          {/* Tarjeta de Próxima Lección */}
+          <div className="bg-gray-800 rounded-2xl p-6 shadow-xl border-t-2 border-blue-500">
+            <h2 className="text-2xl font-semibold mb-4 text-gray-200">Lecciones de {currentLevel}</h2>
+            <ul className="space-y-4">
+              {lessonsForCurrentLevel.map(lesson => (
+                <li key={lesson.id} className="flex items-center justify-between p-3 bg-gray-700 rounded-xl">
+                  <div className="flex-1">
+                    <p className="text-lg font-medium">{lesson.title}</p>
+                    <span className="text-sm text-gray-400 capitalize">{lesson.type}</span>
+                  </div>
+                  {userData.lessonsCompleted.includes(lesson.id) ? (
+                    <span className="text-green-400 font-semibold">✓ Completa</span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setSelectedLesson(lesson);
+                        setPage('lesson');
+                      }}
+                      className="bg-blue-600 text-white py-2 px-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg"
+                    >
+                      Empezar
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Sección de Cursos */}
+        <div className="mt-12">
+          <h2 className="text-2xl font-semibold mb-6 text-gray-200">Explorar Cursos por Nivel</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+            {levels.map(level => (
+              <button key={level} onClick={() => setCurrentLevel(level)} className={`py-4 px-2 rounded-xl text-center font-bold text-lg transition-colors shadow-lg ${currentLevel === level ? 'bg-orange-500 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'}`}>
+                Nivel {level}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderLesson = () => (
+    <div className="p-8 bg-gray-900 text-white min-h-screen">
+      <div className="container mx-auto flex flex-col md:flex-row gap-8">
+        {/* Contenido de la Lección */}
+        <div className="md:w-2/3">
+          <button onClick={() => setPage('dashboard')} className="mb-4 text-orange-400 hover:underline">← Volver al Dashboard</button>
+          <h1 className="text-3xl font-bold text-gray-200 mb-4">Lección: {selectedLesson?.title || 'Lección'}</h1>
+          
+          <div className="bg-gray-800 rounded-2xl p-6 mb-6">
+            <h2 className="text-2xl font-semibold mb-4">Video Explicativo</h2>
+            <div className="aspect-w-16 aspect-h-9 bg-gray-700 rounded-xl flex items-center justify-center">
+              <span className="text-gray-400">¡Aquí iría el video de la lección!</span>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-2xl p-6">
+            <h2 className="text-2xl font-semibold mb-4">Ejercicios Interactivos</h2>
+            {/* Simulación de un ejercicio de escritura */}
+            <p className="text-gray-400 mb-4">
+              **Ejercicio de escritura:** Escribe una oración usando el presente simple para describir tu rutina diaria.
+            </p>
+            <textarea
+              className="w-full h-24 p-4 bg-gray-700 rounded-xl text-white border-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Ej. I wake up early every day."
+            ></textarea>
+
+            {/* Simulación de un ejercicio de speaking */}
+            <p className="text-gray-400 mt-6 mb-4">
+              **Ejercicio de speaking:** Presiona el botón y repite la siguiente frase: "She speaks three languages fluently."
+            </p>
+            <button
+              onClick={() => setMessage('¡Excelente! Tu pronunciación es muy clara.')}
+              className="bg-green-600 text-white py-2 px-4 rounded-xl hover:bg-green-700 transition-colors"
+            >
+              Grabar y Verificar Pronunciación
+            </button>
+            <p className="text-lg text-white mt-4">{message}</p>
+          </div>
+          
+          <button
+            onClick={() => handleLessonCompletion(selectedLesson.id)}
+            className="mt-8 w-full bg-orange-600 text-white font-bold py-4 px-6 rounded-xl hover:bg-orange-700 transition-colors text-lg shadow-lg"
+          >
+            Marcar Lección como Completa
+          </button>
+        </div>
+
+        {/* Sección de Notas y Vocabulario */}
+        <div className="md:w-1/3 bg-gray-800 rounded-2xl p-6 h-fit">
+          <h2 className="text-2xl font-semibold mb-4 text-gray-200">Notas de la Lección</h2>
+          <p className="text-gray-400 mb-2">Aquí el usuario podría tomar notas sobre la lección.</p>
+          <p className="text-gray-400">**Vocabulario clave:**</p>
+          <ul className="list-disc list-inside mt-2 text-gray-400">
+            <li>Verb (verbo)</li>
+            <li>Subject (sujeto)</li>
+            <li>Conjugation (conjugación)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="bg-gray-900 font-sans antialiased text-gray-100">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.6.1/firebase-app.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.6.1/firebase-auth.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.6.1/firebase-firestore.js"></script>
+        {page === 'dashboard' ? renderDashboard() : renderLesson()}
+      </div>
+    </>
+  );
+};
+
+export default App;
