@@ -1,34 +1,12 @@
-// client/src/pages/Dashboard.jsx
-import React from 'react';
-import ProgressCircle from '../components/ProgressCircle';
-import BadgeCard from '../components/BadgeCard';
+import React from "react";
 
-const Dashboard = () => {
+function Dashboard() {
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold text-blue-600 mb-6">¡Hola, Usuario!</h1>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <h2 className="text-xl font-semibold mb-4">Tu Progreso</h2>
-          <ProgressCircle percentage={67} level="A2" />
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <h2 className="text-xl font-semibold mb-4">Insignias Recientes</h2>
-          <BadgeCard title="Past Tense Pro" icon="🏅" />
-          <BadgeCard title="7-Day Streak" icon="🌟" />
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <h2 className="text-xl font-semibold mb-4">Lección de Hoy</h2>
-          <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition">
-            Ordering Food 🍔
-          </button>
-        </div>
-      </div>
+    <div className="p-6 bg-gradient-to-r from-blue-500 to-teal-400 min-h-screen text-white">
+      <h1 className="text-3xl font-bold">📊 Dashboard de LinguaFluent</h1>
+      <p className="mt-4 text-lg">Tu progreso, insignias y lecciones pendientes.</p>
     </div>
   );
-};
+}
 
 export default Dashboard;
