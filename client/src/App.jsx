@@ -1,5 +1,5 @@
-import React from "react";
-import Dashboard from "./pages/Dashboard"; // ← ¡Esta es la línea que estaba fallando!
+import React from 'react';
+import Dashboard from './pages/Dashboard';
 
 function App() {
   return <Dashboard />;
